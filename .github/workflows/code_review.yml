@@ -1,52 +1,58 @@
-name: DeepSeek Code Review
+name: DeepSeek Cloud Debugger
 
 on:
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:    # 手动触发
+    inputs:
+      test_mode:
+        description: '测试模式（basic/advance/custom）'
+        required: true
+        default: 'basic'
+      custom_code:
+        description: '自定义测试代码（base64编码）'
+        required: false
 
 jobs:
-  analyze:
+  debug:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
 
-      - name: Install dependencies
-        run: pip install openai python-dotenv
+      - name: Generate Test File
+        id: generate
+        run: |
+          python .github/scripts/generate_test.py \
+            --mode "${{ inputs.test_mode }}" \
+            --code "${{ inputs.custom_code || '' }}" \
+            --output test_case.py
+          echo "generated_file=test_case.py" >> $GITHUB_OUTPUT
+
+      - name: Install Dependencies
+        run: |
+          pip install openai python-dotenv
+          pip list
 
       - name: Run Code Review
         env:
           DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
         run: |
-          python .github/scripts/deepseek_review.py
-          echo "=== 审查报告预览 ==="
-          head -n 20 review_result.md  # 预览前20行
+          echo "::group::Environment Check"
+          python -c "import os, sys; print(f'Python {sys.version}\nKey: {os.getenv(\"DEEPSEEK_APIKEY\")[:3]}...')"
+          echo "::endgroup::"
+          
+          python .github/scripts/deepseek_review.py \
+            --input "${{ steps.generate.outputs.generated_file }}" \
+            --output review.md
 
-      - name: Upload Review Report
+      - name: Upload Results
         uses: actions/upload-artifact@v3
-        if: always()
         with:
-          name: code-review-report
-          path: review_result.md
-
-      - name: Post as PR Comment
-        uses: actions/github-script@v6
-        if: always()
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const report = fs.existsSync('review_result.md') 
-              ? fs.readFileSync('review_result.md', 'utf8')
-              : '⚠️ 报告生成失败，请检查工作流日志';
-            
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `🤖 DeepSeek 代码审查结果\n\n${report}`
-            });
+          name: debug-${{ github.run_id }}
+          path: |
+            review.md
+            test_case.py
