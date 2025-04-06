@@ -1,20 +1,26 @@
 name: DeepSeek Cloud Debugger
 
 on:
-  workflow_dispatch:    # 手动触发
+  workflow_dispatch:
     inputs:
       test_mode:
-        description: '测试模式（basic/advance/custom）'
+        description: 'Test mode (basic/advance/custom)'
         required: true
         default: 'basic'
       custom_code:
-        description: '自定义测试代码（base64编码）'
+        description: 'Base64 encoded custom code'
         required: false
 
 jobs:
   debug:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    
+    permissions:  # 添加必要的权限
+      contents: read
+      packages: read
+      actions: read
+
     steps:
       - uses: actions/checkout@v4
 
@@ -22,6 +28,7 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
+          cache: 'pip'  # 启用缓存
 
       - name: Generate Test File
         id: generate
@@ -33,26 +40,21 @@ jobs:
           echo "generated_file=test_case.py" >> $GITHUB_OUTPUT
 
       - name: Install Dependencies
-        run: |
-          pip install openai python-dotenv
-          pip list
+        run: pip install openai python-dotenv --quiet
 
       - name: Run Code Review
         env:
           DEEPSEEK_APIKEY: ${{ secrets.DEEPSEEK_APIKEY }}
         run: |
-          echo "::group::Environment Check"
-          python -c "import os, sys; print(f'Python {sys.version}\nKey: {os.getenv(\"DEEPSEEK_APIKEY\")[:3]}...')"
-          echo "::endgroup::"
-          
           python .github/scripts/deepseek_review.py \
             --input "${{ steps.generate.outputs.generated_file }}" \
             --output review.md
 
       - name: Upload Results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: debug-${{ github.run_id }}
           path: |
             review.md
             test_case.py
+          retention-days: 1  # 自动清理旧文件
