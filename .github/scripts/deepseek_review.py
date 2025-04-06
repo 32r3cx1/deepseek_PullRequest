@@ -3,8 +3,8 @@ import requests
 import glob
 
 # DeepSeek API 配置
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"  # 假设的 API 地址
-API_KEY = os.getenv("DEEPSEEK_API_KEY")  # 从 GitHub Secrets 获取
+DEEPSEEK_API_URL = "https://platform.deepseek.com/api_keys"  # 假设的 API 地址
+API_KEY = os.getenv("DEEPSEEK_APIKEY")  # 从 GitHub Secrets 获取
 
 def analyze_code(file_path):
     """发送代码到 DeepSeek API 进行分析"""
