@@ -1,11 +1,11 @@
 import os
 import requests
 import glob
-from pathlib import Path
 
-# DeepSeek API 配置（需确认实际API地址）
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/generate‌"  # 假设地址
-API_KEY = os.getenv("DEEPSEEK_APIKEY")  # 确保与GitHub Secrets一致
+# DeepSeek API 配置
+BASE_URL = "https://api.deepseek.com"
+API_ENDPOINT = "/v1/generate"
+API_KEY = os.getenv("DEEPSEEK_APIKEY")  # 与Secrets完全一致
 
 def analyze_code(file_path):
     """发送代码到 DeepSeek API 进行分析"""
@@ -14,14 +14,17 @@ def analyze_code(file_path):
             code = f.read()
 
         prompt = f"""
-        请审查以下代码并指出潜在问题：
-        - 循环嵌套过深（>3层）
-        - 可能的性能瓶颈
-        - 代码风格问题（PEP 8）
-        - 潜在 Bug 或安全风险
-
-        请用 Markdown 格式返回结果，包含具体行号和建议。
-
+        请严格审查以下Python代码：
+        1. 代码质量问题（嵌套循环、复杂度过高）
+        2. 潜在bug（边界条件、异常处理）
+        3. PEP 8风格违规
+        4. 安全风险
+        
+        要求：
+        - 按严重程度分级（⚠️警告/❌错误）
+        - 标明具体行号
+        - 给出修改建议
+        
         代码：
         ```python
         {code}
@@ -30,42 +33,57 @@ def analyze_code(file_path):
 
         headers = {
             "Authorization": f"Bearer {API_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Accept": "application/json"
         }
 
         data = {
             "model": "deepseek-coder",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3
+            "prompt": prompt,  # 根据实际API文档调整字段
+            "max_tokens": 2000,
+            "temperature": 0.2
         }
 
-        response = requests.post(DEEPSEEK_API_URL, json=data, headers=headers, timeout=30)
-        response.raise_for_status()  # 检查HTTP状态码
+        response = requests.post(
+            f"{BASE_URL}{API_ENDPOINT}",
+            json=data,
+            headers=headers,
+            timeout=30
+        )
+        response.raise_for_status()
 
         response_data = response.json()
-        if "choices" not in response_data:
-            return "API返回格式异常，缺少choices字段"
-
-        return response_data["choices"][0]["message"]["content"]
+        
+        # 根据实际API响应结构调整解析逻辑
+        if "choices" in response_data:
+            return response_data["choices"][0]["text"]
+        elif "output" in response_data:
+            return response_data["output"]
+        else:
+            return str(response_data)  # 调试用返回原始响应
 
     except Exception as e:
-        return f"⚠️ 分析失败: {str(e)}"
+        return f"❌ 审查失败: {str(e)}\n响应内容: {response.text if 'response' in locals() else '无响应'}"
 
 def main():
-    """遍历所有.py文件并分析"""
+    """主执行函数"""
     changed_files = glob.glob("**/*.py", recursive=True)
-    all_comments = []
-
-    for file in changed_files:
-        print(f"正在分析: {file}")
-        review = analyze_code(file)
-        all_comments.append(f"## 📄 {file}\n\n{review}")
-
-    # 确保目录存在
-    Path(".github/scripts").mkdir(parents=True, exist_ok=True)
     
+    if not changed_files:
+        print("未发现.py文件")
+        with open("review_result.md", "w") as f:
+            f.write("未发现需要审查的Python文件")
+        return
+
+    all_comments = ["## DeepSeek AI 代码审查报告"]
+    
+    for file in changed_files:
+        print(f"正在审查: {file}")
+        review = analyze_code(file)
+        all_comments.append(f"### 文件: {file}\n\n{review}\n")
+
     with open("review_result.md", "w", encoding="utf-8") as f:
-        f.write("\n\n".join(all_comments))
+        f.write("\n".join(all_comments))
 
 if __name__ == "__main__":
     main()
