@@ -30,6 +30,11 @@ jobs:
     - name: Install dependencies
       run: pip install requests PyGithub
 
+    - name: Debug output
+      run: |
+        echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
+        echo "API key exists: ${{ secrets.DEEPSEEK_APIKEY != '' }}"
+
     - name: Run Code Review
       env:
         DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_APIKEY }}
